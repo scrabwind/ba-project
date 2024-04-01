@@ -373,6 +373,20 @@ class ReceiptRefactor:
             raise ValueError("Provided shop name is not correct")
 
 
+async def create_json(file, shop_name):
+    b = BytesIO(await file.read())
+
+    creator = DataFrameCreator(b)
+    creator.create_dataframe(shop_name)
+
+    refactor = ReceiptRefactor(creator.df)
+    refactor.refactor_receipt_data(shop_name)
+
+    data = refactor.df.to_json(None, orient="records")
+
+    return data
+
+
 if __name__ == "__main__":
     try:
         with open("input/biedronka/2.pdf", "rb") as f:
@@ -383,6 +397,9 @@ if __name__ == "__main__":
             refactor = ReceiptRefactor(creator.df)
             refactor.refactor_receipt_data("biedronka")
 
-            refactor.df.to_json("output/biedronka/2.json")
+            dictionary = refactor.df.to_dict("records")
+
+            print(dictionary)
+            # refactor.df.to_json("output/biedronka/2.json")
     except FileNotFoundError:
         print("The file could not be found.")
