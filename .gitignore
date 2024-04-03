@@ -4,3 +4,4 @@ input
 *.png
 *.xlsx
 *.pdf
+__pycache__/
