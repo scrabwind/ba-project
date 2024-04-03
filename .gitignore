@@ -1,3 +1,6 @@
 .vscode
 output
 input
+*.png
+*.xlsx
+*.pdf

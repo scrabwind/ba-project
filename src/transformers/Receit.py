@@ -86,7 +86,6 @@ class DataFrameCreator:
         page = self._doc[0]  # Get first page of the pdf
 
         self._page = page
-        self._page2 = "xd"
 
         pix = page.get_pixmap(
             dpi=300, colorspace=fitz.csGRAY
@@ -94,9 +93,14 @@ class DataFrameCreator:
         pix.invert_irect(pix.irect)  # Invert color of the image
         pdf_bytes = pix.tobytes()  # Convert image to bytes
         img = Image.open(BytesIO(pdf_bytes))  # Open image from bytes
+        resized = img.resize((round(img.width * 1.2), img.height))
+
+        # resized.save("debug-pc.png")
 
         # Use pytesseract to extract text and save it into a dataframe
-        df = image_to_data(img, "pol", config="--psm 4", output_type=Output.DATAFRAME)
+        df = image_to_data(
+            resized, lang="pol", config="--psm 4 --oem 1", output_type=Output.DATAFRAME
+        )
 
         self._doc.close()
 
@@ -144,7 +148,7 @@ class ReceiptRefactor:
             """
             This function cleans the dataframe by dropping unnecessary columns and converting all texts to lower case.
             Args:
-                receipt_df (pd.DataFrame): The dataframe to be cleaned.
+                df (pd.DataFrame): The dataframe to be cleaned.
 
             Returns:
                 pd.DataFrame: The cleaned dataframe.
@@ -155,35 +159,44 @@ class ReceiptRefactor:
                 axis=1,
                 inplace=True,
             )
+            # for col in new_df.columns:
+            #     if new_df[col].dtype == "object":
+            #         new_df[col] = new_df[col].str.replace("%", "")
             new_df.dropna(subset="text", inplace=True)
             new_df["text"] = new_df["text"].str.lower()
             return new_df
 
         @staticmethod
         def adjust_price(df: pd.DataFrame):
-            new_df = df.copy()
-            new_df["amount"] = (
-                new_df["amount"].replace("l", "1").astype(float)
-            )  # Ensure 'amount' is float
-            new_df["price_per_unit"] = new_df["price_per_unit"].astype(
-                float
-            )  # Ensure 'price_per_unit' is float
+            try:
+                new_df = df.copy()
+                new_df["amount"] = (
+                    new_df["amount"].replace("l", "1").astype(float)
+                )  # Ensure 'amount' is float
+                new_df["price_per_unit"] = new_df["price_per_unit"].astype(
+                    float
+                )  # Ensure 'price_per_unit' is float
 
-            # Multiply 'amount' by 'price_per_unit' and assign it to 'price' column
-            new_df["price"] = new_df["amount"].mul(new_df["price_per_unit"])
-            return new_df
+                # Multiply 'amount' by 'price_per_unit' and assign it to 'price' column
+                new_df["price"] = new_df["amount"].mul(new_df["price_per_unit"])
+                return new_df
+            except ValueError as e:
+                raise ValueError(e, "Passed dataframe was", df)
 
         @staticmethod
         def sum_discount(arg_pd: pd.DataFrame):
-            dfp = arg_pd.copy()
-            x = dfp[dfp["Nazwa"] == "Rabat"]
-            for i in x.index.array:
-                main_price = dfp.loc[i - 1, "Wartość"]
-                discount_price = x["Cena"][i]
-                new_price = np.round(main_price + discount_price, decimals=2)
-                dfp.loc[i - 1, "Wartość"] = new_price
-            dfp = dfp.drop(x.index.array)
-            return dfp
+            try:
+                dfp = arg_pd.copy()
+                x = dfp[dfp["Nazwa"] == "Rabat"]
+                for i in x.index.array:
+                    main_price = dfp.loc[i - 1, "Wartość"]
+                    discount_price = x["Cena"][i]
+                    new_price = np.round(main_price + discount_price, decimals=2)
+                    dfp.loc[i - 1, "Wartość"] = new_price
+                dfp = dfp.drop(x.index.array)
+                return dfp
+            except ValueError as e:
+                raise ValueError(e, "Passed dataframe was", arg_pd)
 
     class UtilGetters:
         @staticmethod
@@ -335,7 +348,7 @@ class ReceiptRefactor:
         sub_arrays = self.UtilGetters.get_sub_arrays(df)
         df = pd.DataFrame(
             sub_arrays, columns=["name", "amount", "star", "price_per_unit", "price"]
-        ).dropna()
+        ).dropna(ignore_index=True)
         df = df.map(lambda x: x.replace(",", "."))
         invalid_price_index = self.UtilGetters.get_invalid_price_index(df)
         df = df[:invalid_price_index].drop(["star"], axis=1)
@@ -389,17 +402,17 @@ async def create_json(file, shop_name):
 
 if __name__ == "__main__":
     try:
-        with open("input/biedronka/2.pdf", "rb") as f:
+        sklep = "auchan"
+        with open(f"input/{sklep}/2.pdf", "rb") as f:
             b = BytesIO(f.read())
             creator = DataFrameCreator(b)
-            creator.create_dataframe("biedronka")
+            creator.create_dataframe(sklep)
 
             refactor = ReceiptRefactor(creator.df)
-            refactor.refactor_receipt_data("biedronka")
+            refactor.refactor_receipt_data(sklep)
 
             dictionary = refactor.df.to_dict("records")
 
-            print(dictionary)
             # refactor.df.to_json("output/biedronka/2.json")
     except FileNotFoundError:
         print("The file could not be found.")
